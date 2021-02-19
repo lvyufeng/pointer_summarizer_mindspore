@@ -7,7 +7,7 @@ from mindspore import Tensor, Parameter, ParameterTuple
 from mindspore.common.initializer import initializer, Uniform
 from mindspore import log as logger
 from mindspore import ms_function
-from rnn_cells import rnn_relu_cell, rnn_tanh_cell, lstm_cell, gru_cell
+from .rnn_cells import rnn_relu_cell, rnn_tanh_cell, lstm_cell, gru_cell
 from mindspore.ops.primitive import constexpr
 
 @constexpr
