@@ -1,7 +1,7 @@
 import mindspore
 import mindspore.nn as nn
 import mindspore.ops.functional as F
-from src.utils
+# from src.utils
 class Encoder(nn.Cell):
     def __init__(self, vocab_size, embed_dim, hidden_dim):
         super().__init__()
