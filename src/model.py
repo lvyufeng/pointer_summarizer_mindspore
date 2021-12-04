@@ -2,8 +2,8 @@ import mindspore
 import numpy as np
 import mindspore.nn as nn
 import mindspore.ops as P
-from layers.rnns import LSTM
-from layers.layers import Dense, Embedding
+from .layers.rnns import LSTM
+from .layers.layers import Dense, Embedding
 from mindspore import Tensor
 from mindspore.common.initializer import initializer, HeUniform, Uniform, Normal, _calculate_fan_in_and_fan_out
 from mindspore.ops.primitive import constexpr
@@ -68,10 +68,10 @@ class ReduceState(nn.Cell):
 
     def construct(self, hidden):
         h, c = hidden # h, c dim = 2 x b x hidden_dim
-        h_in = P.Transpose()(h, (1, 0, 2)).view(-1, self.hidden_dim * 2)
+        h_in = h.swapaxes(0, 1).view(-1, self.hidden_dim * 2)
         hidden_reduced_h = P.ReLU()(self.reduce_h(h))
         hidden_reduced_h = P.ExpandDims()(hidden_reduced_h, 0)
-        c_in = P.Transpose()(c, (1, 0, 2)).view(-1, self.hidden_dim * 2)
+        c_in = c.swapaxes(0, 1).view(-1, self.hidden_dim * 2)
         hidden_reduced_c = P.ReLU()(self.reduce_c(c_in))
         hidden_reduced_c = P.ExpandDims()(hidden_reduced_c, 0)
 
@@ -177,7 +177,7 @@ class Decoder(nn.Cell):
         output = self.out1(output) # (B, hidden_dim)
 
         output = self.out2(output) # (B, vocab_size)
-        vocab_dist = P.SoftMax(1)(output)
+        vocab_dist = P.Softmax(1)(output)
 
         if self.pointer_gen:
             vocab_dist_ = p_gen * vocab_dist
