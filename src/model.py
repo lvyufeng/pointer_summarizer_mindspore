@@ -2,12 +2,11 @@ import mindspore
 import numpy as np
 import mindspore.nn as nn
 import mindspore.ops as P
+from mindspore import Tensor
+from mindspore.common.initializer import initializer, Uniform, Normal
+from mindspore.ops.primitive import constexpr
 from .layers.rnns import LSTM
 from .layers.layers import Dense, Embedding
-from mindspore import Tensor
-from mindspore.common.initializer import initializer, HeUniform, Uniform, Normal, _calculate_fan_in_and_fan_out
-from mindspore.ops.primitive import constexpr
-from typing import Optional
 
 @constexpr
 def range_tensor(start, end):
@@ -15,9 +14,9 @@ def range_tensor(start, end):
 
 def init_lstm_wt(lstm):
     for name, param in lstm.parameters_and_names():
-        if name.startwith('weight_'):
+        if name.startswith('weight_'):
             param.set_data(initializer(Uniform(0.02), param.shape))
-        elif name.startwith('bias_'):
+        elif name.startswith('bias_'):
             # set forget bias to 1
             n = param.shape[0]
             start, end = n // 4, n // 2
@@ -69,7 +68,7 @@ class ReduceState(nn.Cell):
     def construct(self, hidden):
         h, c = hidden # h, c dim = 2 x b x hidden_dim
         h_in = h.swapaxes(0, 1).view(-1, self.hidden_dim * 2)
-        hidden_reduced_h = P.ReLU()(self.reduce_h(h))
+        hidden_reduced_h = P.ReLU()(self.reduce_h(h_in))
         hidden_reduced_h = P.ExpandDims()(hidden_reduced_h, 0)
         c_in = c.swapaxes(0, 1).view(-1, self.hidden_dim * 2)
         hidden_reduced_c = P.ReLU()(self.reduce_c(c_in))
@@ -93,7 +92,7 @@ class Attention(nn.Cell):
 
         dec_fea = self.decode_proj(s_t_hat) # (B, 2 * hidden_dim)
         dec_fea_expand = P.ExpandDims()(dec_fea, 1)
-        dec_fea_expand = P.BroadcastTo()(dec_fea_expand, (b, t_k, n))
+        dec_fea_expand = P.BroadcastTo((b, t_k, n))(dec_fea_expand).view(-1, n)
 
         att_features = encoder_feature + dec_fea_expand
         if self.is_coverage:
@@ -110,7 +109,7 @@ class Attention(nn.Cell):
         attn_dist = attn_dist_ / normalization_factor
 
         attn_dist = P.ExpandDims()(attn_dist, 1) # (B, 1, t_k)
-        c_t = P.BatchMatMul(attn_dist, encoder_outputs) # (B, 1, n)
+        c_t = P.BatchMatMul()(attn_dist, encoder_outputs) # (B, 1, n)
         c_t = c_t.view(-1, self.hidden_dim * 2) # (B, 2 * hidden_dim)
 
         attn_dist = attn_dist.view(-1, t_k)
@@ -154,7 +153,7 @@ class Decoder(nn.Cell):
             coverage = coverage_next
 
         y_t_1_embed = self.embedding(y_t_1)
-        x = self.x_content(P.Concat(1)((c_t_1, y_t_1_embed)))
+        x = self.x_context(P.Concat(1)((c_t_1, y_t_1_embed)))
         lstm_out, s_t = self.lstm(P.ExpandDims()(x, 1), s_t_1)
 
         h_decoder, c_decoder = s_t
@@ -191,7 +190,7 @@ class Decoder(nn.Cell):
             batch_num = range_tensor(0, batch_size)
             batch_num = P.ExpandDims()(batch_num, 1)
             batch_num = P.Tile()(batch_num, (1, attn_len))
-            indices = P.Pack(2)((batch_num, enc_batch_extend_vocab))
+            indices = P.Stack(2)((batch_num, enc_batch_extend_vocab))
             shape = (batch_size, vocab_dist_.shape[1])
             attn_dist_ = P.ScatterNd()(indices, attn_dist_, shape)
             final_dist = vocab_dist_ + attn_dist_
@@ -200,4 +199,55 @@ class Decoder(nn.Cell):
         
         return final_dist, s_t, c_t, attn_dist, p_gen, coverage
 
+class TrainOneBatch(nn.Cell):
+    def __init__(self, encoder, decoder, reduce_state, config):
+        super().__init__()
+        self.encoder = encoder
+        self.decoder = decoder
+        self.reduce_state = reduce_state
+        self.max_dec_steps = config.max_dec_steps
+        self.eps = config.eps
+        self.cov_loss_wt = config.cov_loss_wt
+        self.is_coverage = config.is_coverage
 
+    def construct(self, enc_batch, enc_padding_mask, enc_lens, enc_batch_extend_vocab, \
+                  extra_zeros, c_t_1, coverage, \
+                  dec_batch, dec_padding_mask, max_dec_len, dec_lens_var, target_batch):
+        encoder_outputs, encoder_feature, encoder_hidden = self.encoder(enc_batch, enc_lens)
+        s_t_1 = self.reduce_state(encoder_hidden)
+        step_losses = ()
+        for di in range(self.max_dec_steps):
+            y_t_1 = dec_batch[:, di] # Teacher forcing
+            final_dist, s_t_1,  c_t_1, attn_dist, p_gen, next_coverage = self.decoder(y_t_1, s_t_1,
+                                                        encoder_outputs, encoder_feature, enc_padding_mask, c_t_1,
+                                                        extra_zeros, enc_batch_extend_vocab, coverage, di)
+            target = target_batch[:, di]
+            gold_probs = P.GatherD()(final_dist, 1, P.ExpandDims()(target, 1)).squeeze()
+            step_loss = -P.Log()(gold_probs + self.eps)
+            if self.is_coverage:
+                step_coverage_loss = P.ReduceSum()(P.Minimum()(attn_dist, coverage), 1)
+                step_loss = step_loss + self.cov_loss_wt * step_coverage_loss
+                coverage = next_coverage
+
+            step_mask = dec_padding_mask[:, di]
+            step_loss = step_loss * step_mask
+            step_losses += (step_loss,)
+        sum_losses = P.ReduceSum()(P.Stack(1)(step_losses), 1)
+        batch_avg_loss = sum_losses / dec_lens_var
+        loss = P.ReduceMean()(batch_avg_loss)
+
+        return loss
+
+class TrainOneStep(nn.TrainOneStepCell):
+    def __init__(self, network, optimizer, sens=1, max_grad_norm=1.0):
+        super().__init__(network, optimizer, sens=sens)
+        self.max_grad_norm = max_grad_norm
+
+    def construct(self, *inputs):
+        loss = self.network(*inputs)
+        sens = P.fill(loss.dtype, loss.shape, self.sens)
+        grads = self.grad(self.network, self.weights)(*inputs, sens)
+        grads = self.grad_reducer(grads)
+        grads = P.clip_by_global_norm(grads, self.max_grad_norm)
+        loss = P.depend(loss, self.optimizer(grads))
+        return loss

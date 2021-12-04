@@ -1,7 +1,7 @@
 import math
 import mindspore
 import mindspore.nn as nn
-from mindspore import Parameter, Tensor
+from mindspore import Tensor
 from mindspore.common.initializer import initializer, HeUniform, Uniform, Normal, _calculate_fan_in_and_fan_out
 
 class Conv1d(nn.Conv1d):

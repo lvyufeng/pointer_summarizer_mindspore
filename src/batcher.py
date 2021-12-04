@@ -94,7 +94,7 @@ class Batch(object):
 
     def init_encoder_seq(self, example_list):
         # Determine the maximum length of the encoder input sequence in this batch
-        max_enc_seq_len = max([ex.enc_len for ex in example_list])
+        max_enc_seq_len = config.max_enc_steps
 
         # Pad the encoder input sequences up to the length of the longest sequence
         for ex in example_list:
