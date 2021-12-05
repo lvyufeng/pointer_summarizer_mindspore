@@ -8,7 +8,7 @@ from src.batcher import Batcher
 import src.config as config
 from mindspore import context
 
-context.set_context(max_call_depth=10000, enable_graph_kernel=True)
+context.set_context(max_call_depth=10000)
 
 def train_iters(trainer, batcher, n_iters, print_interval=1000):
     print("Start network training")
@@ -20,15 +20,17 @@ def train_iters(trainer, batcher, n_iters, print_interval=1000):
             get_input_from_batch(batch)
         dec_batch, dec_padding_mask, max_dec_len, dec_lens_var, target_batch = \
             get_output_from_batch(batch)
-        
+        # print(enc_lens, dec_lens_var)        
         loss = trainer(enc_batch, enc_padding_mask, enc_lens, enc_batch_extend_vocab, \
                         extra_zeros, c_t_1, coverage, \
                         dec_batch, dec_padding_mask, max_dec_len, dec_lens_var, target_batch)
         iter += 1
         
         if iter % print_interval == 0:
+            end = time.time()
             print('steps %d, seconds for %d batch: %.2f , loss: %f' % \
-                  (iter, print_interval, time.time() - start, loss.asnumpy()))
+                  (iter, print_interval, end - start, loss.asnumpy()))
+            start = end
 
 encoder = Encoder(config.vocab_size, config.emb_dim, config.hidden_dim)
 decoder = Decoder(config.vocab_size, config.emb_dim, config.hidden_dim, config.pointer_gen, config.is_coverage)
@@ -49,7 +51,9 @@ dec_batch, dec_padding_mask, max_dec_len, dec_lens_var, target_batch = \
 
 # pre-compile
 print("Start network compile")
+start = time.time()
 trainer.compile(enc_batch, enc_padding_mask, enc_lens, enc_batch_extend_vocab, \
                 extra_zeros, c_t_1, coverage, \
                 dec_batch, dec_padding_mask, max_dec_len, dec_lens_var, target_batch)
+print("Compile time: %.2f" % (time.time() - start))
 train_iters(trainer, batcher, 10000, 100)

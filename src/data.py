@@ -16,6 +16,7 @@ STOP_DECODING = '[STOP]'
 
 # Note: none of <s>, </s>, [PAD], [UNK], [START], [STOP] should appear in the vocab file.
 
+
 class Vocab(object):
 
     def __init__(self, vocab_file, max_size):
@@ -35,7 +36,7 @@ class Vocab(object):
                 pieces = line.split()
                 if len(pieces) != 2:
                     print(
-                        'Warning: incorrectly formatted line in vocabulary file: %s\n' % line)
+                        'Warning: incorrectly formatted line in vocabulary file: %s' % line)
                     continue
                 w = pieces[0]
                 if w in [SENTENCE_START, SENTENCE_END, UNKNOWN_TOKEN, PAD_TOKEN, START_DECODING, STOP_DECODING]:
@@ -128,9 +129,19 @@ def outputids2words(id_list, vocab, article_oovs):
         words.append(w)
     return words
 
-def example_generator(data_path):
-    reader = FileReader(data_path)
-    return reader.get_next()
+
+def example_generator(data_path, single_pass):
+    while True:
+        reader = FileReader(data_path)
+        while True:
+            try:
+                yield next(reader.get_next())
+            except:
+                break
+        if single_pass:
+            print("example_generator completed reading all datafiles. No more data.")
+            break
+
 
 def abstract2sents(abstract):
     cur = 0

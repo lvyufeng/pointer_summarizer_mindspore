@@ -49,7 +49,7 @@ class Encoder(nn.Cell):
         
     def construct(self, inputs, seq_lens):
         embedded = self.embedding(inputs)
-        output, hidden = self.lstm(embedded, seq_length=seq_lens)
+        output, hidden = self.lstm(embedded)
         encoder_feature = output.view(-1, 2 * self.hidden_dim)
         encoder_feature = self.W_h(encoder_feature)
 

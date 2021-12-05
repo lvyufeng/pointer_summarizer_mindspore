@@ -1,1 +1,1 @@
-python pointer_summarizer/train.py
+python train.py > train.log &

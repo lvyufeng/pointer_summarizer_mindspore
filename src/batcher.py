@@ -118,8 +118,9 @@ class Batch(object):
         # For pointer-generator mode, need to store some extra info
         if config.pointer_gen:
             # Determine the max number of in-article OOVs in this batch
-            self.max_art_oovs = max([len(ex.article_oovs)
-                                    for ex in example_list])
+            # self.max_art_oovs = max([len(ex.article_oovs)
+            #                         for ex in example_list])
+            self.max_art_oovs = config.max_art_oovs
             # Store the in-article OOVs themselves
             self.art_oovs = [ex.article_oovs for ex in example_list]
             # Store the version of the enc_batch that uses the article OOV ids
@@ -223,7 +224,7 @@ class Batcher(object):
 
     def fill_example_queue(self):
         input_gen = self.text_generator(
-            data.example_generator(self._data_path))
+            data.example_generator(self._data_path, self._single_pass))
 
         while True:
             try:
