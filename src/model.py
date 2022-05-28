@@ -5,8 +5,7 @@ import mindspore.ops as P
 from mindspore import Tensor
 from mindspore.common.initializer import initializer, Uniform, Normal
 from mindspore.ops.primitive import constexpr
-from .layers.rnns import LSTM
-from .layers.layers import Dense, Embedding
+from .rnns import LSTM
 
 @constexpr
 def range_tensor(start, end):
@@ -38,18 +37,19 @@ def init_wt_unif(wt):
 class Encoder(nn.Cell):
     def __init__(self, vocab_size, embed_dim, hidden_dim):
         super().__init__()
-        self.embedding = Embedding(vocab_size, embed_dim)
+        self.embedding = nn.Embedding(vocab_size, embed_dim)
         init_wt_normal(self.embedding.embedding_table)
 
         self.lstm = LSTM(embed_dim, hidden_dim, num_layers=1, has_bias=True, batch_first=True, bidirectional=True)
         init_lstm_wt(self.lstm)
         
-        self.W_h = Dense(hidden_dim * 2, hidden_dim * 2, has_bias=False)
+        self.W_h = nn.Dense(hidden_dim * 2, hidden_dim * 2, has_bias=False)
         self.hidden_dim = hidden_dim
         
     def construct(self, inputs, seq_lens):
         embedded = self.embedding(inputs)
-        output, hidden = self.lstm(embedded)
+        output, hidden = self.lstm(embedded, seq_length=seq_lens)
+        # output, hidden = self.lstm(embedded)
         encoder_feature = output.view(-1, 2 * self.hidden_dim)
         encoder_feature = self.W_h(encoder_feature)
 
@@ -58,9 +58,9 @@ class Encoder(nn.Cell):
 class ReduceState(nn.Cell):
     def __init__(self, hidden_dim):
         super().__init__()
-        self.reduce_h = Dense(hidden_dim * 2, hidden_dim)
+        self.reduce_h = nn.Dense(hidden_dim * 2, hidden_dim)
         init_linear_wt(self.reduce_h)
-        self.reduce_c = Dense(hidden_dim * 2, hidden_dim)
+        self.reduce_c = nn.Dense(hidden_dim * 2, hidden_dim)
         init_linear_wt(self.reduce_c)
         
         self.hidden_dim = hidden_dim
@@ -83,9 +83,9 @@ class Attention(nn.Cell):
         self.is_coverage = is_coverage
 
         if is_coverage:
-            self.W_c = Dense(1, hidden_dim * 2, has_bias=False)
-        self.decode_proj = Dense(hidden_dim * 2, hidden_dim * 2)
-        self.v = Dense(hidden_dim * 2, 1, has_bias=False)
+            self.W_c = nn.Dense(1, hidden_dim * 2, has_bias=False)
+        self.decode_proj = nn.Dense(hidden_dim * 2, hidden_dim * 2)
+        self.v = nn.Dense(hidden_dim * 2, 1, has_bias=False)
 
     def construct(self, s_t_hat, encoder_outputs, encoder_feature, enc_padding_mask, coverage):
         b, t_k, n = encoder_outputs.shape
@@ -125,19 +125,19 @@ class Decoder(nn.Cell):
         super().__init__()
         self.attention_network = Attention(hidden_dim, is_coverage)
         # decoder
-        self.embedding = Embedding(vocab_size, embed_dim)
+        self.embedding = nn.Embedding(vocab_size, embed_dim)
         init_wt_normal(self.embedding.embedding_table)
 
-        self.x_context = Dense(hidden_dim * 2 + embed_dim, embed_dim)
+        self.x_context = nn.Dense(hidden_dim * 2 + embed_dim, embed_dim)
 
         self.lstm = LSTM(embed_dim, hidden_dim, num_layers=1, batch_first=True, bidirectional=False)
         init_lstm_wt(self.lstm)
 
         if pointer_gen:
-            self.p_gen_linear = Dense(hidden_dim * 4 + embed_dim, 1)
+            self.p_gen_linear = nn.Dense(hidden_dim * 4 + embed_dim, 1)
 
-        self.out1 = Dense(hidden_dim * 3, hidden_dim)
-        self.out2 = Dense(hidden_dim, vocab_size)
+        self.out1 = nn.Dense(hidden_dim * 3, hidden_dim)
+        self.out2 = nn.Dense(hidden_dim, vocab_size)
         init_linear_wt(self.out2)
         
         self.hidden_dim = hidden_dim
@@ -199,7 +199,7 @@ class Decoder(nn.Cell):
         
         return final_dist, s_t, c_t, attn_dist, p_gen, coverage
 
-class TrainOneBatch(nn.Cell):
+class PointerNet(nn.Cell):
     def __init__(self, encoder, decoder, reduce_state, config):
         super().__init__()
         self.encoder = encoder

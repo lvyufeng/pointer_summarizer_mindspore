@@ -26,9 +26,8 @@ def rnn_relu_cell(inputs, hidden, w_ih, w_hh, b_ih, b_hh):
         hgates = P.MatMul(False, True)(hidden, w_hh) + b_hh
     return P.ReLU()(igates + hgates)
 
-def lstm_cell(inputs, hidden, w_ih, w_hh, b_ih, b_hh):
+def lstm_cell(inputs, hx, cx, w_ih, w_hh, b_ih, b_hh):
     '''LSTM cell function'''
-    hx, cx = hidden
     if b_ih is None:
         gates = P.MatMul(False, True)(inputs, w_ih) + P.MatMul(False, True)(hx, w_hh)
     else:
@@ -200,7 +199,8 @@ class LSTMCell(RNNCellBase):
         self.support_non_tensor_inputs = True
 
     def construct(self, inputs, hx):
-        return lstm_cell(inputs, hx, self.weight_ih, self.weight_hh, self.bias_ih, self.bias_hh)
+        hx, cx = hx
+        return lstm_cell(inputs, hx, cx, self.weight_ih, self.weight_hh, self.bias_ih, self.bias_hh)
 
 class GRUCell(RNNCellBase):
     r"""

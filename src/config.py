@@ -2,8 +2,8 @@
 hidden_dim = 256
 emb_dim = 128
 batch_size = 8
-max_enc_steps = 400
-max_dec_steps = 100
+max_enc_steps = 10
+max_dec_steps = 10
 max_art_oovs = 100
 beam_size = 4
 min_dec_steps = 35
